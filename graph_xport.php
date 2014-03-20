@@ -82,6 +82,9 @@ $graph_info = db_fetch_row("SELECT * FROM graph_templates_graph WHERE local_grap
 /* for bandwidth, NThPercentile */
 $xport_meta = array();
 
+/* JSON array */
+$json_array = array();
+
 /* Get graph export */
 $xport_array = @rrdtool_function_xport($_GET["local_graph_id"], $_GET["rra_id"], $graph_data_array, $xport_meta);
 
@@ -92,59 +95,141 @@ if (is_array($xport_array["meta"])) {
 	$filename = "graph_export.csv";
 }
 
-header("Content-type: application/vnd.ms-excel");
+if (!empty($_GET["json"])) {
+	header("Content-type: application/json");
+}
+else {
+	header("Content-type: application/vnd.ms-excel");
+}
+
 if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] != 'off') {
 	header("Pragma: cache");
 }
 
 header("Cache-Control: max-age=15");
-if (!isset($_GET["stdout"])) {
+if (!isset($_GET["stdout"]) && empty($_GET["json"])) {
 	header("Content-Disposition: attachment; filename=\"" . $filename . "\"");
 }
 
 if (is_array($xport_array["meta"])) {
-	print '"Title:","'          . $xport_array["meta"]["title_cache"]                . '"' . "\n";
-	print '"Vertical Label:","' . $xport_array["meta"]["vertical_label"]             . '"' . "\n";
-	print '"Start Date:","'     . date("Y-m-d H:i:s", $xport_array["meta"]["start"]) . '"' . "\n";
-	print '"End Date:","'       . date("Y-m-d H:i:s", $xport_array["meta"]["end"])   . '"' . "\n";
-	print '"Step:","'           . $xport_array["meta"]["step"]                       . '"' . "\n";
-	print '"Total Rows:","'     . $xport_array["meta"]["rows"]                       . '"' . "\n";
-	print '"Graph ID:","'       . $xport_array["meta"]["local_graph_id"]             . '"' . "\n";
-	print '"Host ID:","'        . $xport_array["meta"]["host_id"]                    . '"' . "\n";
-
-	if (isset($xport_meta["NthPercentile"])) {
-		foreach($xport_meta["NthPercentile"] as $item) {
-			print '"Nth Percentile:","' . $item["value"] . '","' . $item["format"] . '"' . "\n";
+	if (!empty($_GET["json"])) {
+		$json_array["meta"]=$xport_array["meta"];
+		if (isset($xport_meta["NthPercentile"])) {
+			$json_array["NthPercentile"]=$xport_meta["NthPercentile"];
+		}
+		if (isset($xport_meta["Summation"])) {
+			$json_array["meta"]=$xport_meta["Summation"];
 		}
 	}
-	if (isset($xport_meta["Summation"])) {
-		foreach($xport_meta["Summation"] as $item) {
-			print '"Summation:","' . $item["value"] . '","' . $item["format"] . '"' . "\n";
-		}
+	else {
+		print '"Title:","'          . $xport_array["meta"]["title_cache"]                . '"' . "\n";
+    	print '"Vertical Label:","' . $xport_array["meta"]["vertical_label"]             . '"' . "\n";
+    	print '"Start Date:","'     . date("Y-m-d H:i:s", $xport_array["meta"]["start"]) . '"' . "\n";
+    	print '"End Date:","'       . date("Y-m-d H:i:s", $xport_array["meta"]["end"])   . '"' . "\n";
+    	print '"Step:","'           . $xport_array["meta"]["step"]                       . '"' . "\n";
+    	print '"Total Rows:","'     . $xport_array["meta"]["rows"]                       . '"' . "\n";
+    	print '"Graph ID:","'       . $xport_array["meta"]["local_graph_id"]             . '"' . "\n";
+    	print '"Host ID:","'        . $xport_array["meta"]["host_id"]                    . '"' . "\n";
+
+    	if (isset($xport_meta["NthPercentile"])) {
+    		foreach($xport_meta["NthPercentile"] as $item) {
+    			print '"Nth Percentile:","' . $item["value"] . '","' . $item["format"] . '"' . "\n";
+    		}
+    	}
+    	if (isset($xport_meta["Summation"])) {
+    		foreach($xport_meta["Summation"] as $item) {
+    			print '"Summation:","' . $item["value"] . '","' . $item["format"] . '"' . "\n";
+    		}
+    	}
+
+    	print '""' . "\n";
+
+    	$header = '"Date"';
+    	for($i=1;$i<=$xport_array["meta"]["columns"];$i++) {
+    		$header .= ',"' . $xport_array["meta"]["legend"]["col" . $i] . '"';
+    	}
+    	print $header . "\n";
 	}
 
-	print '""' . "\n";
-
-	$header = '"Date"';
-	for($i=1;$i<=$xport_array["meta"]["columns"];$i++) {
-		$header .= ',"' . $xport_array["meta"]["legend"]["col" . $i] . '"';
-	}
-	print $header . "\n";
 }
 
 if (is_array($xport_array["data"])) {
-	foreach($xport_array["data"] as $row) {
-		$data = '"' . date("Y-m-d H:i:s", $row["timestamp"]) . '"';
-		for($i=1;$i<=$xport_array["meta"]["columns"];$i++) {
-			$data .= ',"' . $row["col" . $i] . '"';
-		}
-		print $data . "\n";
+	if (!empty($_GET["json"])) {
+		$json_array["data"]=$xport_array["data"];
 	}
+	else {
+		foreach($xport_array["data"] as $row) {
+			$data = '"' . date("Y-m-d H:i:s", $row["timestamp"]) . '"';
+			for($i=1;$i<=$xport_array["meta"]["columns"];$i++) {
+				$data .= ',"' . $row["col" . $i] . '"';
+			}
+			print $data . "\n";
+		}
+	}
+
+}
+
+if (!empty($_GET["json"])) {
+	echo prettyPrint(json_encode($json_array));
 }
 
 /* log the memory usage */
 if (read_config_option("log_verbosity") >= POLLER_VERBOSITY_MEDIUM && function_exists('memory_get_peak_usage')) {
 	cacti_log("The Peak Graph XPORT Memory Usage was '" . memory_get_peak_usage() . "'", FALSE, "WEBUI");
+}
+
+function prettyPrint( $json )
+{
+    $result = '';
+    $level = 0;
+    $prev_char = '';
+    $in_quotes = false;
+    $ends_line_level = NULL;
+    $json_length = strlen( $json );
+
+    for( $i = 0; $i < $json_length; $i++ ) {
+        $char = $json[$i];
+        $new_line_level = NULL;
+        $post = "";
+        if( $ends_line_level !== NULL ) {
+            $new_line_level = $ends_line_level;
+            $ends_line_level = NULL;
+        }
+        if( $char === '"' && $prev_char != '\\' ) {
+            $in_quotes = !$in_quotes;
+        } else if( ! $in_quotes ) {
+            switch( $char ) {
+                case '}': case ']':
+                    $level--;
+                    $ends_line_level = NULL;
+                    $new_line_level = $level;
+                    break;
+
+                case '{': case '[':
+                    $level++;
+                case ',':
+                    $ends_line_level = $level;
+                    break;
+
+                case ':':
+                    $post = " ";
+                    break;
+
+                case " ": case "\t": case "\n": case "\r":
+                    $char = "";
+                    $ends_line_level = $new_line_level;
+                    $new_line_level = NULL;
+                    break;
+            }
+        }
+        if( $new_line_level !== NULL ) {
+            $result .= "\n".str_repeat( "\t", $new_line_level );
+        }
+        $result .= $char.$post;
+        $prev_char = $char;
+    }
+
+    return $result;
 }
 
 ?>
